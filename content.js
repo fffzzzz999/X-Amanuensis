@@ -500,8 +500,8 @@ class TwitterScraper {
     const tweetElements = document.querySelectorAll('[data-testid="tweet"]');
     
     tweetElements.forEach(tweetElement => {
-      // 检查是否已经添加了AI回复按钮
-      if (tweetElement.querySelector('.ai-reply-button')) {
+      // 检查是否已经添加了AI按钮
+      if (tweetElement.querySelector('.ai-reply-button') || tweetElement.querySelector('.ai-imitate-button')) {
         return;
       }
 
@@ -527,7 +527,23 @@ class TwitterScraper {
         font-family: inherit;
       `;
 
-      // 添加点击事件
+      // 创建模仿发帖按钮
+      const aiImitateButton = document.createElement('button');
+      aiImitateButton.className = 'ai-imitate-button';
+      aiImitateButton.textContent = '模仿发帖';
+      aiImitateButton.style.cssText = `
+        margin-left: 4px;
+        padding: 4px 8px;
+        background-color: #17bf63;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: inherit;
+      `;
+
+      // 添加AI回复点击事件
       aiReplyButton.addEventListener('click', async (e) => {
         e.stopPropagation();
         // 显示加载状态
@@ -542,10 +558,26 @@ class TwitterScraper {
         aiReplyButton.disabled = false;
       });
 
+      // 添加模仿发帖点击事件
+      aiImitateButton.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        // 显示加载状态
+        const originalText = aiImitateButton.textContent;
+        aiImitateButton.textContent = '生成中...';
+        aiImitateButton.disabled = true;
+        
+        await this.handleImitatePost(tweetElement);
+        
+        // 恢复原始状态
+        aiImitateButton.textContent = originalText;
+        aiImitateButton.disabled = false;
+      });
+
       // 将按钮插入到回复按钮旁边
       const replyContainer = replyButton.closest('div[role="group"]');
       if (replyContainer) {
         replyContainer.appendChild(aiReplyButton);
+        replyContainer.appendChild(aiImitateButton);
       }
     });
   }
@@ -684,6 +716,361 @@ class TwitterScraper {
       alert('AI回复生成失败: ' + error.message);
       return null;
     }
+  }
+
+  // 处理模仿发帖点击
+  async handleImitatePost(tweetElement) {
+    try {
+      console.log('模仿发帖按钮被点击');
+      
+      // 获取推文内容
+      const tweetText = tweetElement.querySelector('[data-testid="tweetText"]');
+      if (!tweetText) {
+        console.error('未找到推文内容');
+        return;
+      }
+      
+      const tweetContent = tweetText.textContent.trim();
+      console.log('推文内容:', tweetContent);
+      
+      // 获取推文作者
+      const authorElement = tweetElement.querySelector('[data-testid="User-Name"]');
+      const author = authorElement ? authorElement.textContent.trim() : '';
+      
+      // 生成模仿推文
+      const imitatePost = await this.generateImitatePost(tweetContent, author);
+      if (!imitatePost) {
+        console.error('模仿推文生成失败');
+        return;
+      }
+      
+      // 在新窗口中显示生成的推文并复制到剪贴板
+      await this.showImitatePost(imitatePost);
+      
+    } catch (error) {
+      console.error('模仿发帖失败:', error);
+    }
+  }
+  
+  // 生成模仿推文
+  async generateImitatePost(tweetContent, author) {
+    try {
+      // 从存储中获取API Key
+      const result = await chrome.storage.local.get(['twitter_config']);
+      const config = result.twitter_config || {};
+      const apiKey = config.apiKey;
+      
+      if (!apiKey) {
+        console.error('未配置Gemini API Key');
+        alert('请先在扩展设置中配置Gemini API Key');
+        return null;
+      }
+      
+      // 构建请求提示词
+      const prompt = `请模仿以下推文的风格和语调，创作一条全新的推文内容：
+
+参考推文作者：${author}
+参考推文内容：${tweetContent}
+
+要求：
+1. 模仿原推文的写作风格、语调和表达方式
+2. 创作全新的内容，不要复制原文
+3. 保持类似的主题方向或表达角度
+4. 控制在1000字以内
+5. 可以包含适当的表情符号
+6. 语言要自然流畅，符合社交媒体特点
+7. 直接返回推文内容，不要包含引号或其他格式
+
+注意：生成的内容应该是原创的，只是在风格上模仿参考推文。`;
+      
+      // 调用Gemini API
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
+        const generatedText = data.candidates[0].content.parts[0].text.trim();
+        console.log('AI生成的模仿推文:', generatedText);
+        
+        // 确保字数限制在1000字以内
+        const limitedText = generatedText.length > 1000 ? generatedText.substring(0, 1000) + '...' : generatedText;
+        return limitedText;
+      } else {
+        console.error('API响应格式不正确:', data);
+        return null;
+      }
+      
+    } catch (error) {
+      console.error('调用Gemini API失败:', error);
+      alert('模仿推文生成失败: ' + error.message);
+      return null;
+    }
+  }
+  
+  // 显示模仿推文并直接填入发帖输入框
+  async showImitatePost(imitateText) {
+    try {
+      console.log('准备填入模仿推文:', imitateText);
+      
+      // 查找并点击发帖按钮
+      await this.openTweetComposer();
+      
+      // 等待发帖输入框出现
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // 查找发帖输入框并填入内容
+      await this.fillTweetComposer(imitateText);
+      
+    } catch (error) {
+      console.error('填入模仿推文失败:', error);
+      // 如果直接填入失败，则复制到剪贴板并提示
+      try {
+        await navigator.clipboard.writeText(imitateText);
+        alert('模仿推文已生成并复制到剪贴板，请手动粘贴到发帖框:\n\n' + imitateText.substring(0, 200) + (imitateText.length > 200 ? '...' : ''));
+      } catch (clipboardError) {
+        alert('模仿推文已生成:\n\n' + imitateText);
+      }
+    }
+  }
+  
+  // 打开发帖输入框
+  async openTweetComposer() {
+    try {
+      // 方法1: 查找主发帖按钮（蓝色的Tweet按钮）
+      let tweetButton = document.querySelector('[data-testid="SideNav_NewTweet_Button"]');
+      
+      if (!tweetButton) {
+        // 方法2: 查找其他可能的发帖按钮
+        tweetButton = document.querySelector('[aria-label*="Tweet"]') || 
+                     document.querySelector('[data-testid="tweetButton"]') ||
+                     document.querySelector('a[href="/compose/tweet"]');
+      }
+      
+      if (!tweetButton) {
+        // 方法3: 查找包含"Tweet"、"发推"等文本的按钮
+        const buttons = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+        tweetButton = buttons.find(btn => {
+          const text = btn.textContent?.trim();
+          return text === 'Tweet' || text === '发推' || text === 'Post' || text === '发布';
+        });
+      }
+      
+      if (tweetButton) {
+        console.log('找到发帖按钮，点击打开');
+        tweetButton.click();
+        return true;
+      } else {
+        // 如果找不到按钮，尝试通过快捷键
+        console.log('未找到发帖按钮，尝试快捷键');
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'n',
+          ctrlKey: true,
+          bubbles: true
+        }));
+        return true;
+      }
+    } catch (error) {
+      console.error('打开发帖界面失败:', error);
+      throw error;
+    }
+  }
+  
+  // 填充发帖输入框
+  async fillTweetComposer(text) {
+    try {
+      // 查找发帖输入框的多种可能选择器
+      let tweetInput = document.querySelector('[data-testid="tweetTextarea_0"]') ||
+                      document.querySelector('[data-block="true"][data-editor]') ||
+                      document.querySelector('.public-DraftEditor-content') ||
+                      document.querySelector('[placeholder*="What is happening"]') ||
+                      document.querySelector('[placeholder*="有什么新鲜事"]') ||
+                      document.querySelector('[placeholder*="What\'s happening"]') ||
+                      document.querySelector('[data-testid="tweetTextarea"]') ||
+                      document.querySelector('[role="textbox"][aria-label*="Tweet"]');
+      
+      if (!tweetInput) {
+        // 如果还是找不到，等待更长时间再试
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        tweetInput = document.querySelector('[data-testid="tweetTextarea_0"]') ||
+                    document.querySelector('[data-block="true"][data-editor]') ||
+                    document.querySelector('.public-DraftEditor-content');
+      }
+      
+      if (tweetInput) {
+        console.log('找到发帖输入框，填入内容');
+        
+        // 先点击聚焦
+        tweetInput.click();
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // 清空现有内容
+        tweetInput.focus();
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // 针对Draft.js编辑器的特殊处理
+        if (tweetInput.querySelector('[data-block="true"]') || tweetInput.classList.contains('public-DraftEditor-content')) {
+          // 这是Draft.js编辑器
+          await this.fillDraftJsEditor(tweetInput, text);
+        } else {
+          // 传统输入框处理
+          await this.fillTraditionalInput(tweetInput, text);
+        }
+        
+        console.log('内容已填入发帖输入框');
+        
+        // 显示成功提示
+        this.showSuccessNotification('模仿推文已填入发帖框！');
+        
+      } else {
+        throw new Error('未找到发帖输入框');
+      }
+    } catch (error) {
+      console.error('填充发帖输入框失败:', error);
+      throw error;
+    }
+  }
+  
+  // 填充Draft.js编辑器
+  async fillDraftJsEditor(editor, text) {
+    try {
+      // 查找Draft.js的文本容器
+      let textContainer = editor.querySelector('.public-DraftStyleDefault-block') ||
+                         editor.querySelector('[data-block="true"]');
+      
+      if (!textContainer) {
+        textContainer = editor;
+      }
+      
+      // 查找br[data-text="true"]元素及其父元素
+      const textBr = textContainer.querySelector('br[data-text="true"]');
+      if (textBr && textBr.parentElement) {
+        const spanElement = textBr.parentElement;
+        
+        // 清空现有内容
+        spanElement.innerHTML = '';
+        
+        // 插入文本内容
+        spanElement.textContent = text;
+        
+        console.log('通过br[data-text="true"]方式填入内容');
+      } else {
+        // 备用方法：直接设置textContent
+        textContainer.textContent = text;
+        console.log('通过textContent方式填入内容');
+      }
+      
+      // 触发Draft.js相关事件
+      const events = ['input', 'change', 'keyup', 'paste'];
+      events.forEach(eventType => {
+        const event = new Event(eventType, { bubbles: true });
+        editor.dispatchEvent(event);
+        textContainer.dispatchEvent(event);
+      });
+      
+      // 额外触发focus事件确保编辑器激活
+      editor.focus();
+      
+      return true;
+    } catch (error) {
+      console.error('填充Draft.js编辑器失败:', error);
+      throw error;
+    }
+  }
+  
+  // 填充传统输入框
+  async fillTraditionalInput(input, text) {
+    try {
+      // 选择所有内容并删除
+      document.execCommand('selectAll');
+      document.execCommand('delete');
+      
+      // 方法1: 尝试直接设置值
+      if (input.tagName.toLowerCase() === 'textarea' || input.tagName.toLowerCase() === 'input') {
+        input.value = text;
+      } else {
+        // 方法2: 对于contenteditable元素
+        if (input.isContentEditable) {
+          input.textContent = text;
+        } else {
+          // 方法3: 查找内部的可编辑元素
+          const editableElement = input.querySelector('[contenteditable="true"]') ||
+                                 input.querySelector('.public-DraftEditor-content');
+          
+          if (editableElement) {
+            editableElement.textContent = text;
+          }
+        }
+      }
+      
+      // 触发输入事件
+      const inputEvent = new Event('input', { bubbles: true });
+      input.dispatchEvent(inputEvent);
+      
+      // 也触发change事件
+      const changeEvent = new Event('change', { bubbles: true });
+      input.dispatchEvent(changeEvent);
+      
+      return true;
+    } catch (error) {
+      console.error('填充传统输入框失败:', error);
+      throw error;
+    }
+  }
+  
+  // 显示成功通知
+  showSuccessNotification(message) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: #17bf63;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 25px;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.3s ease-out;
+    `;
+    
+    // 添加动画样式
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+    `;
+    document.head.appendChild(style);
+    
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // 3秒后自动消失
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 3000);
   }
 
 
