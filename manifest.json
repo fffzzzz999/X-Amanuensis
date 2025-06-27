@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "X-Amanuensis",
+  "version": "1.0",
+  "description": "抓取Twitter页面信息的Chrome扩展程序",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "alarms",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://twitter.com/*",
+    "https://x.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://twitter.com/*",
+        "https://x.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Twitter信息抓取器"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
