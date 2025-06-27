@@ -4,7 +4,6 @@ class TwitterScraper {
     this.tweets = [];
     this.isRunning = false;
     this.tweetIds = new Set(); // 用于快速查重
-    this.twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 两天前的时间
   }
 
   // 自动点击"显示更多"按钮展开推文内容
@@ -160,11 +159,9 @@ class TwitterScraper {
     return Math.abs(hash).toString(36);
   }
 
-  // 检查推文是否超过两天
+  // 检查推文是否超过时间限制（已移除限制）
   isTweetTooOld(tweetTime) {
-    if (!tweetTime) return false;
-    const tweetDate = new Date(tweetTime);
-    return tweetDate < this.twoDaysAgo;
+    return false; // 不再检查时间限制
   }
 
   // 检查推文是否已存在
@@ -229,14 +226,6 @@ class TwitterScraper {
           tweetData.content &&
           !this.isDuplicateTweet(tweetData.id)
         ) {
-          // 检查推文是否超过两天
-          if (this.isTweetTooOld(tweetData.time)) {
-            console.log(
-              `发现超过两天的推文: ${tweetData.time}，停止抓取`
-            );
-            this.stopScraping();
-            break;
-          }
           const isAdded = await this.addTweet(tweetData);
           if (isAdded) {
             scrapedTweets.push(tweetData);
@@ -365,7 +354,6 @@ class TwitterScraper {
     }
 
     this.isRunning = true;
-    this.twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 重新计算两天前的时间
     console.log("开始抓取Twitter信息...");
     
     // 显示状态指示器
