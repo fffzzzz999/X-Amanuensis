@@ -372,7 +372,7 @@ class TwitterScraper {
     this.addAiReplyButtons();
 
     // 阻止推文点击跳转
-    this.preventTweetClicks();
+    // this.preventTweetClicks();
 
     // 监听页面变化
     this.observer = new MutationObserver(async () => {
@@ -765,7 +765,7 @@ console.log("Twitter信息抓取器已加载");
 // 自动启动函数
 function tryAutoStart() {
   chrome.storage.local.get(['auto_start_scraping'], (result) => {
-    const autoStart = result.auto_start_scraping !== false; // 默认为true
+    const autoStart = result.auto_start_scraping === true; // 默认为false
     
     if (autoStart && twitterScraper.isOnCorrectPage() && twitterScraper.isOnTimelinePage() && !twitterScraper.isRunning) {
       // 延迟启动，确保页面完全加载

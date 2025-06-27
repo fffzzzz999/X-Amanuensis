@@ -384,7 +384,7 @@ class PopupController {
     try {
       const result = await chrome.storage.local.get(['twitter_config', 'auto_start_scraping']);
       const config = result.twitter_config || {};
-      const autoStart = result.auto_start_scraping !== false; // 默认为true
+      const autoStart = result.auto_start_scraping === true; // 默认为false
       
       this.apiKeyInput.value = config.apiKey || '';
       this.autoStartCheckbox.checked = autoStart;
